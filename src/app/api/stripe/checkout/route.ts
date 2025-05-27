@@ -38,7 +38,8 @@ export async function POST(request: NextRequest) {
     }
 
     // URLs de succès et d'annulation
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+    const baseUrl =
+      process.env.NEXT_PUBLIC_BASE_URL || "https://slimfile.vercel.app";
     const successUrl = `${baseUrl}/compress?success=true`;
     const cancelUrl = `${baseUrl}/compress?canceled=true`;
 

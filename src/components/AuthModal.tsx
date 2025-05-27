@@ -39,14 +39,23 @@ export default function AuthModal({
         body: JSON.stringify({ email }),
       });
 
-      const data = await response.json();
-
       if (!response.ok) {
-        throw new Error(data.error || "Erreur d'authentification");
+        const text = await response.text();
+        let errorMessage = "Erreur d'authentification";
+
+        try {
+          const data = JSON.parse(text);
+          errorMessage = data.error || errorMessage;
+        } catch {
+          // Si ce n'est pas du JSON valide, utiliser le message par défaut
+        }
+
+        throw new Error(errorMessage);
       }
 
-      // Pour la démo, on simule la connexion automatique
-      // En prod, l'utilisateur devrait cliquer sur le lien reçu par email
+      const data = await response.json();
+
+      // Connexion directe (pas de magic link en démo)
       setStep("success");
 
       setTimeout(() => {
@@ -54,7 +63,7 @@ export default function AuthModal({
         onClose();
         setStep("email");
         setEmail("");
-      }, 2000);
+      }, 1500);
     } catch (error) {
       setError(error instanceof Error ? error.message : "Erreur inconnue");
     } finally {
