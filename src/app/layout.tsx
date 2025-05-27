@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { AuthProvider } from "@/hooks/useAuth";
+import { Analytics } from "@vercel/analytics/react";
 import "@/lib/env-validation"; // Validation automatique
 import "./globals.css";
 
@@ -72,6 +73,7 @@ export default function RootLayout({
         <meta name="theme-color" content="#667eea" />
       </head>
       <body className={inter.className}>
+        <Analytics />
         <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
