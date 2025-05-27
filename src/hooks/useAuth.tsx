@@ -47,6 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (response.ok) {
         const data = await response.json();
         if (data.authenticated) {
+          console.log("🔍 Données auth reçues:", data.user);
           setUser(data.user);
         }
       }

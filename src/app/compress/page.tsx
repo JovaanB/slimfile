@@ -63,6 +63,14 @@ export default function CompressPage() {
     );
   }
 
+  // Debug de l'état utilisateur
+  console.log("🔍 État utilisateur:", {
+    user,
+    isAuthenticated,
+    isLoading,
+    canCompress: user ? user.remaining > 0 || user.is_pro : false,
+  });
+
   return (
     <>
       <div className="min-h-screen bg-gray-50">
@@ -116,9 +124,7 @@ export default function CompressPage() {
                   onCompressionStart={handleCompressionStart}
                   onCompressionEnd={handleCompressionEnd}
                   onFilesCompressed={handleFilesCompressed}
-                  isDisabled={
-                    user ? !user.is_pro && user.current >= user.max : true
-                  }
+                  isDisabled={user ? user.remaining <= 0 && !user.is_pro : true}
                 />
 
                 {/* Formats supportés */}
