@@ -9,7 +9,7 @@ import {
 import { CompressedFile } from "@/app/compress/page";
 
 interface BatchFileUploaderProps {
-  onCompressionStart: () => void;
+  onCompressionStart: (fileCount: number, fileTypes: string[]) => void;
   onCompressionEnd: () => void;
   onFilesCompressed: (files: CompressedFile[]) => void;
   isDisabled?: boolean;
@@ -262,7 +262,10 @@ export default function BatchFileUploader({
       }));
 
       setFileProgresses(newProgresses);
-      onCompressionStart();
+      onCompressionStart(
+        validFiles.length,
+        validFiles.map((f) => f.type)
+      );
 
       try {
         // Traitement par lots côté client

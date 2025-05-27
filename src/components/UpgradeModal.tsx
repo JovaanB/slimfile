@@ -7,17 +7,18 @@ import {
   CheckIcon,
 } from "@heroicons/react/24/outline";
 import { PLANS } from "@/lib/stripe";
+import { on } from "events";
 
 interface UpgradeModalProps {
   isOpen: boolean;
   onClose: () => void;
-  userEmail: string;
+  onPlanViewed: () => void;
 }
 
 export default function UpgradeModal({
   isOpen,
   onClose,
-  userEmail,
+  onPlanViewed,
 }: UpgradeModalProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
@@ -25,6 +26,7 @@ export default function UpgradeModal({
   const handleUpgrade = async () => {
     if (isLoading) return;
 
+    onPlanViewed();
     setIsLoading(true);
     setError("");
 

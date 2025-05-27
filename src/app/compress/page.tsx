@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
+import { usePostHog } from "@/hooks/usePosthog";
 import AuthModal from "@/components/AuthModal";
 import BatchFileUploader from "@/components/BatchFileUploader";
 import CompressionResults from "@/components/CompressionResults";
@@ -20,26 +21,78 @@ export interface CompressedFile {
 
 export default function CompressPage() {
   const { user, isLoading, isAuthenticated, logout, refreshUser } = useAuth();
+  const { track, identify, events } = usePostHog();
+
   const [compressedFiles, setCompressedFiles] = useState<CompressedFile[]>([]);
   const [isCompressing, setIsCompressing] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
+  // 📊 Track page view et user identification
+  useEffect(() => {
+    track("compress_page_viewed", {
+      is_authenticated: isAuthenticated,
+      user_plan: user?.is_pro ? "pro" : "free",
+      usage_count: user?.current || 0,
+      remaining_compressions: user?.remaining || 0,
+    });
+
+    // Identifier l'utilisateur pour PostHog
+    if (user) {
+      identify(user.email, {
+        is_pro: user.is_pro,
+        usage_count: user.current,
+        max_compressions: user.max,
+        signup_date: user.created_at || new Date().toISOString(),
+      });
+    }
+  }, [user, isAuthenticated, track, identify]);
+
   // Afficher le modal d'auth si pas connecté
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
       setShowAuthModal(true);
+
+      // 📊 Track auth required
+      track("auth_modal_shown", {
+        trigger: "page_load",
+        page: "compress",
+      });
     }
-  }, [isLoading, isAuthenticated]);
+  }, [isLoading, isAuthenticated, track]);
 
   const handleFilesCompressed = (files: CompressedFile[]) => {
     setCompressedFiles((prev) => [...prev, ...files]);
+
+    // 📊 Track successful compression batch
+    track(events.COMPRESSION_COMPLETED, {
+      files_processed: files.length,
+      file_types: files.map((f) => f.type),
+      total_original_size_mb:
+        files.reduce((sum, f) => sum + f.originalSize, 0) / 1024 / 1024,
+      total_compressed_size_mb:
+        files.reduce((sum, f) => sum + f.compressedSize, 0) / 1024 / 1024,
+      avg_compression_ratio:
+        files.reduce((sum, f) => sum + f.compressionRatio, 0) / files.length,
+      user_plan: user?.is_pro ? "pro" : "free",
+      usage_after: user?.current || 0 + files.length,
+    });
+
     // Rafraîchir les stats d'usage
     refreshUser();
   };
 
-  const handleCompressionStart = () => {
+  const handleCompressionStart = (fileCount: number, fileTypes: string[]) => {
     setIsCompressing(true);
+
+    // 📊 Track compression start
+    track(events.COMPRESSION_STARTED, {
+      file_count: fileCount,
+      file_types: fileTypes,
+      user_plan: user?.is_pro ? "pro" : "free",
+      usage_before: user?.current || 0,
+      remaining_before: user?.remaining || 0,
+    });
   };
 
   const handleCompressionEnd = () => {
@@ -49,7 +102,48 @@ export default function CompressPage() {
   const handleAuthSuccess = (userData: any) => {
     setShowAuthModal(false);
     refreshUser();
+
+    // 📊 Track successful auth
+    track(events.LOGIN_COMPLETED, {
+      method: userData.method || "magic_link",
+      user_type: userData.is_new_user ? "new" : "returning",
+      from_page: "compress",
+    });
+
     console.log("🔍 Auth réussi, utilisateur:", userData);
+  };
+
+  const handleUpgradeClick = (source: "sidebar_promo" | "limit_reached") => {
+    setShowUpgradeModal(true);
+
+    // 📊 Track upgrade intent
+    track(events.CHECKOUT_STARTED, {
+      source: source,
+      current_usage: user?.current || 0,
+      remaining: user?.remaining || 0,
+      plan_viewed: "pro",
+    });
+  };
+
+  const handlePlanViewed = () => {
+    // 📊 Track plan viewed
+    track(events.PLAN_VIEWED, {
+      plan_type: "pro",
+      price: 9,
+      currency: "EUR",
+      current_usage: user?.current || 0,
+      trigger: "upgrade_modal",
+    });
+  };
+
+  const handleLogout = () => {
+    // 📊 Track logout
+    track("user_logout", {
+      session_duration: "unknown", // Tu peux calculer si besoin
+      compressions_this_session: compressedFiles.length,
+    });
+
+    logout();
   };
 
   // Affichage de chargement
@@ -94,7 +188,7 @@ export default function CompressPage() {
                   <div className="flex items-center space-x-3">
                     <span className="text-sm text-gray-600">{user.email}</span>
                     <button
-                      onClick={logout}
+                      onClick={handleLogout}
                       className="text-sm text-gray-500 hover:text-gray-700 transition-colors"
                     >
                       Déconnexion
@@ -158,7 +252,10 @@ export default function CompressPage() {
                     ].map((format) => (
                       <div
                         key={format.name}
-                        className={`px-4 py-2 rounded-full ${format.color} text-sm font-medium`}
+                        className={`px-4 py-2 rounded-full ${format.color} text-sm font-medium cursor-pointer hover:scale-105 transition-transform`}
+                        onClick={() =>
+                          track("format_info_clicked", { format: format.name })
+                        }
                       >
                         <span className="mr-2">{format.icon}</span>
                         {format.name}
@@ -230,7 +327,7 @@ export default function CompressPage() {
                     </li>
                   </ul>
                   <button
-                    onClick={() => setShowUpgradeModal(true)}
+                    onClick={() => handleUpgradeClick("sidebar_promo")}
                     className="w-full bg-white text-violet-600 py-2 rounded-full font-semibold hover:bg-gray-50 transition-colors"
                   >
                     Upgrader - {9}€/mois
@@ -250,7 +347,7 @@ export default function CompressPage() {
                   </p>
                   <div className="space-y-2">
                     <button
-                      onClick={() => setShowUpgradeModal(true)}
+                      onClick={() => handleUpgradeClick("limit_reached")}
                       className="w-full bg-orange-600 text-white py-2 rounded-full font-semibold hover:bg-orange-700 transition-colors"
                     >
                       Passer à Pro
@@ -269,15 +366,21 @@ export default function CompressPage() {
       {/* Modals */}
       <AuthModal
         isOpen={showAuthModal}
-        onClose={() => setShowAuthModal(false)}
+        onClose={() => {
+          setShowAuthModal(false);
+          track("auth_modal_closed", { completed: false });
+        }}
         onSuccess={handleAuthSuccess}
       />
 
       {user && (
         <UpgradeModal
           isOpen={showUpgradeModal}
-          onClose={() => setShowUpgradeModal(false)}
-          userEmail={user.email}
+          onClose={() => {
+            setShowUpgradeModal(false);
+            track("upgrade_modal_closed", { converted: false });
+          }}
+          onPlanViewed={handlePlanViewed}
         />
       )}
     </>
