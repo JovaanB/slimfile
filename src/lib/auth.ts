@@ -1,6 +1,5 @@
 import { SignJWT, jwtVerify } from "jose";
-import { promises as fs } from "fs";
-import path from "path";
+import { db as database } from "./database";
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || "your-secret-key-change-this-in-production"
@@ -26,83 +25,6 @@ export interface User {
   subscription_end?: string;
   stripe_customer_id?: string;
 }
-
-/**
- * Base de données JSON simple (à remplacer par SQLite plus tard)
- */
-class SimpleDB {
-  private dbPath: string;
-
-  constructor() {
-    this.dbPath = path.join(process.cwd(), "data", "users.json");
-  }
-
-  async ensureDbExists() {
-    try {
-      await fs.mkdir(path.dirname(this.dbPath), { recursive: true });
-      try {
-        await fs.access(this.dbPath);
-      } catch {
-        await fs.writeFile(this.dbPath, JSON.stringify([]));
-      }
-    } catch (error) {
-      console.error("Erreur création DB:", error);
-    }
-  }
-
-  async getUsers(): Promise<User[]> {
-    try {
-      await this.ensureDbExists();
-      const data = await fs.readFile(this.dbPath, "utf-8");
-      return JSON.parse(data);
-    } catch {
-      return [];
-    }
-  }
-
-  async saveUsers(users: User[]): Promise<void> {
-    await this.ensureDbExists();
-    await fs.writeFile(this.dbPath, JSON.stringify(users, null, 2));
-  }
-
-  async findUser(email: string): Promise<User | null> {
-    const users = await this.getUsers();
-    return users.find((u) => u.email === email) || null;
-  }
-
-  async createUser(email: string): Promise<User> {
-    const users = await this.getUsers();
-    const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
-
-    const newUser: User = {
-      email,
-      usage_count: 0,
-      last_reset: currentMonth,
-      created_at: new Date().toISOString(),
-      is_pro: false,
-    };
-
-    users.push(newUser);
-    await this.saveUsers(users);
-    return newUser;
-  }
-
-  async updateUser(
-    email: string,
-    updates: Partial<User>
-  ): Promise<User | null> {
-    const users = await this.getUsers();
-    const userIndex = users.findIndex((u) => u.email === email);
-
-    if (userIndex === -1) return null;
-
-    users[userIndex] = { ...users[userIndex], ...updates };
-    await this.saveUsers(users);
-    return users[userIndex];
-  }
-}
-
-const db = new SimpleDB();
 
 /**
  * Crée un JWT token pour l'utilisateur
@@ -136,7 +58,7 @@ export async function getUserFromToken(token: string): Promise<User | null> {
   const payload = await verifyToken(token);
   if (!payload) return null;
 
-  return await db.findUser(payload.email);
+  return await database.findUser(payload.email);
 }
 
 /**
@@ -151,16 +73,16 @@ export async function authenticateUser(
     throw new Error("Email invalide");
   }
 
-  let user = await db.findUser(email);
+  let user = await database.findUser(email);
 
   if (!user) {
-    user = await db.createUser(email);
+    user = await database.createUser(email);
   }
 
   // Reset du compteur si nouveau mois
   const currentMonth = new Date().toISOString().slice(0, 7);
   if (user.last_reset !== currentMonth) {
-    user = (await db.updateUser(email, {
+    user = (await database.updateUser(email, {
       usage_count: 0,
       last_reset: currentMonth,
     })) as User;
@@ -175,24 +97,39 @@ export async function authenticateUser(
  * Incrémente l'usage d'un utilisateur
  */
 export async function incrementUsage(email: string): Promise<User | null> {
-  const user = await db.findUser(email);
+  const user = await database.findUser(email);
   if (!user) return null;
 
   // Reset si nouveau mois
   const currentMonth = new Date().toISOString().slice(0, 7);
-  let newUsageCount = user.usage_count;
 
   if (user.last_reset !== currentMonth) {
-    newUsageCount = 1;
-    return await db.updateUser(email, {
+    return await database.updateUser(email, {
       usage_count: 1,
       last_reset: currentMonth,
     });
   } else {
-    return await db.updateUser(email, {
+    return await database.updateUser(email, {
       usage_count: user.usage_count + 1,
     });
   }
+}
+
+/**
+ * Met à jour un utilisateur
+ */
+export async function updateUser(
+  email: string,
+  updates: Partial<User>
+): Promise<User | null> {
+  return await database.updateUser(email, updates);
+}
+
+/**
+ * Obtient un utilisateur par email
+ */
+export async function getUserByEmail(email: string): Promise<User | null> {
+  return await database.findUser(email);
 }
 
 /**
@@ -212,22 +149,6 @@ export function canCompress(user: User): boolean {
   return user.usage_count < 5;
 }
 
-/**
- * Met à jour un utilisateur
- */
-export async function updateUser(
-  email: string,
-  updates: Partial<User>
-): Promise<User | null> {
-  return await db.updateUser(email, updates);
-}
-
-/**
- * Obtient un utilisateur par email
- */
-export async function getUserByEmail(email: string): Promise<User | null> {
-  return await db.findUser(email);
-}
 /**
  * Obtient les stats d'usage
  */

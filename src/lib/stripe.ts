@@ -1,19 +1,46 @@
 import Stripe from "stripe";
 import { loadStripe } from "@stripe/stripe-js";
 
-// Configuration Stripe côté serveur
-export const stripe = new Stripe(
-  process.env.STRIPE_SECRET_KEY || "sk_test_...",
-  {
-    apiVersion: "2025-04-30.basil",
-    typescript: true, // Améliore le typage
+// Fonction pour valider les variables Stripe
+function getStripeConfig() {
+  const secretKey = process.env.STRIPE_SECRET_KEY;
+  const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  const priceId = process.env.STRIPE_PRO_PRICE_ID;
+
+  // En développement, utiliser des clés de test ou fallback
+  if (process.env.NODE_ENV === "development") {
+    return {
+      secretKey: secretKey || "sk_test_fallback_development",
+      publishableKey: publishableKey || "pk_test_fallback_development",
+      webhookSecret: webhookSecret || "whsec_fallback_development",
+      priceId: priceId || "price_fallback_development",
+    };
   }
-);
+
+  // En production, les variables sont obligatoires
+  if (!secretKey || !publishableKey) {
+    throw new Error("Variables Stripe manquantes en production");
+  }
+
+  return {
+    secretKey,
+    publishableKey,
+    webhookSecret: webhookSecret || "",
+    priceId: priceId || "",
+  };
+}
+
+const config = getStripeConfig();
+
+// Configuration Stripe côté serveur
+export const stripe = new Stripe(config.secretKey, {
+  apiVersion: "2025-04-30.basil",
+  typescript: true,
+});
 
 // Configuration Stripe côté client
-export const stripePromise = loadStripe(
-  process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "pk_test_..."
-);
+export const stripePromise = loadStripe(config.publishableKey);
 
 // Plans d'abonnement
 export const PLANS = {
@@ -31,7 +58,7 @@ export const PLANS = {
   PRO: {
     name: "Pro",
     price: 9,
-    priceId: process.env.STRIPE_PRO_PRICE_ID || "price_1234567890",
+    priceId: config.priceId,
     compressions: Infinity,
     features: [
       "Compressions illimitées",
@@ -42,6 +69,12 @@ export const PLANS = {
     ],
   },
 } as const;
+
+// Export des configs pour les webhooks
+export const STRIPE_CONFIG = {
+  webhookSecret: config.webhookSecret,
+  baseUrl: process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000",
+};
 
 export type PlanType = keyof typeof PLANS;
 
@@ -103,7 +136,7 @@ export async function getSubscriptionDetails(subscriptionId: string) {
     return {
       id: subscription.id,
       status: subscription.status,
-      current_period_end: subscription.current_period_end,
+      current_period_end: subscription.ended_at,
       customer: subscription.customer,
       plan: subscription.items.data[0]?.price.id,
     };

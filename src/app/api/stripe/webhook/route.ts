@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { stripe } from "@/lib/stripe";
+import { stripe, STRIPE_CONFIG } from "@/lib/stripe";
 import { updateUser, type User } from "@/lib/auth";
-
-const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || "";
 
 export async function POST(request: NextRequest) {
   try {
@@ -16,16 +14,34 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Vérifier la signature Stripe
+    // En développement, ignorer la vérification de signature si pas de secret
     let event;
-    try {
-      event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
-    } catch (err) {
-      console.error("Erreur signature webhook:", err);
-      return NextResponse.json(
-        { error: "Signature invalide" },
-        { status: 400 }
-      );
+    if (
+      process.env.NODE_ENV === "development" &&
+      !STRIPE_CONFIG.webhookSecret.startsWith("whsec_")
+    ) {
+      // Mode développement sans vraie signature
+      try {
+        event = JSON.parse(body);
+        console.log("⚠️ Mode développement: signature webhook ignorée");
+      } catch (err) {
+        return NextResponse.json({ error: "JSON invalide" }, { status: 400 });
+      }
+    } else {
+      // Production ou développement avec vraie signature
+      try {
+        event = stripe.webhooks.constructEvent(
+          body,
+          signature,
+          STRIPE_CONFIG.webhookSecret
+        );
+      } catch (err) {
+        console.error("Erreur signature webhook:", err);
+        return NextResponse.json(
+          { error: "Signature invalide" },
+          { status: 400 }
+        );
+      }
     }
 
     // Traiter les événements Stripe

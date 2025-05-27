@@ -1,154 +1,166 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { FileCompressor, validateFile } from '@/lib/compression'
-import { getUserFromToken, incrementUsage, canCompress, getUsageStats } from '@/lib/auth'
-import { promises as fs } from 'fs'
-import path from 'path'
+import { NextRequest, NextResponse } from "next/server";
+import { FileCompressor, validateFile } from "@/lib/compression";
+import {
+  getUserFromToken,
+  incrementUsage,
+  canCompress,
+  getUsageStats,
+} from "@/lib/auth";
+import { promises as fs } from "fs";
+import path from "path";
 
 interface CompressedFileResponse {
-  id: string
-  originalName: string
-  originalSize: number
-  compressedSize: number
-  compressionRatio: number
-  downloadUrl: string
-  type: 'pdf' | 'image' | 'document'
-  mimeType: string
+  id: string;
+  originalName: string;
+  originalSize: number;
+  compressedSize: number;
+  compressionRatio: number;
+  downloadUrl: string;
+  type: "pdf" | "image" | "document";
+  mimeType: string;
 }
 
 /**
  * Détermine le type de fichier pour l'interface
  */
-function getFileType(mimeType: string): CompressedFileResponse['type'] {
-  if (mimeType === 'application/pdf') return 'pdf'
-  if (mimeType.startsWith('image/')) return 'image'
-  return 'document'
+function getFileType(mimeType: string): CompressedFileResponse["type"] {
+  if (mimeType === "application/pdf") return "pdf";
+  if (mimeType.startsWith("image/")) return "image";
+  return "document";
 }
 
 /**
  * Génère un ID unique pour le fichier
  */
 function generateFileId(): string {
-  return Math.random().toString(36).substr(2, 9) + Date.now().toString(36)
+  return Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
 }
 
 /**
  * Sauvegarde temporaire du fichier compressé
  */
-async function saveCompressedFile(buffer: Buffer, fileName: string, id: string): Promise<string> {
-  const uploadDir = path.join(process.cwd(), 'tmp', 'compressed')
-  
+async function saveCompressedFile(
+  buffer: Buffer,
+  fileName: string,
+  id: string
+): Promise<string> {
+  const uploadDir = path.join(process.cwd(), "tmp", "compressed");
+
   // Créer le dossier si nécessaire
   try {
-    await fs.mkdir(uploadDir, { recursive: true })
+    await fs.mkdir(uploadDir, { recursive: true });
   } catch (error) {
     // Le dossier existe déjà
   }
-  
-  const filePath = path.join(uploadDir, `${id}_${fileName}`)
-  await fs.writeFile(filePath, buffer)
-  
+
+  const filePath = path.join(uploadDir, `${id}_${fileName}`);
+  await fs.writeFile(filePath, buffer);
+
   // Programmer la suppression dans 1 heure
   setTimeout(async () => {
     try {
-      await fs.unlink(filePath)
-      console.log(`Fichier supprimé: ${filePath}`)
+      await fs.unlink(filePath);
+      console.log(`Fichier supprimé: ${filePath}`);
     } catch (error) {
-      console.error(`Erreur suppression fichier: ${error}`)
+      console.error(`Erreur suppression fichier: ${error}`);
     }
-  }, 60 * 60 * 1000) // 1 heure
-  
-  return `/api/download/${id}_${fileName}`
+  }, 60 * 60 * 1000); // 1 heure
+
+  return `/api/download/${id}_${fileName}`;
 }
 
 export async function POST(request: NextRequest) {
   try {
     // Vérifier l'authentification
-    const token = request.cookies.get('auth-token')?.value
-    
+    const token = request.cookies.get("auth-token")?.value;
+
     if (!token) {
       return NextResponse.json(
-        { error: 'Authentification requise' },
+        { error: "Authentification requise" },
         { status: 401 }
-      )
+      );
     }
 
-    const user = await getUserFromToken(token)
-    
+    const user = await getUserFromToken(token);
+
     if (!user) {
-      return NextResponse.json(
-        { error: 'Token invalide' },
-        { status: 401 }
-      )
+      return NextResponse.json({ error: "Token invalide" }, { status: 401 });
     }
 
     // Vérifier les limites d'usage
     if (!canCompress(user)) {
       return NextResponse.json(
-        { 
-          error: 'Limite mensuelle atteinte',
+        {
+          error: "Limite mensuelle atteinte",
           upgrade_required: true,
-          current_usage: user.usage_count
+          current_usage: user.usage_count,
         },
         { status: 403 }
-      )
+      );
     }
 
     // Parse FormData avec l'API Web standard
-    const formData = await request.formData()
-    const files = formData.getAll('files') as File[]
-    const originalSizes = formData.getAll('originalSizes') as string[] // Nouvelles tailles originales
-    
+    const formData = await request.formData();
+    const files = formData.getAll("files") as File[];
+    const originalSizes = formData.getAll("originalSizes") as string[]; // Nouvelles tailles originales
+
     if (!files || files.length === 0) {
       return NextResponse.json(
-        { error: 'Aucun fichier fourni' },
+        { error: "Aucun fichier fourni" },
         { status: 400 }
-      )
+      );
     }
 
     // Vérifier que l'utilisateur ne dépasse pas sa limite avec ces fichiers
-    if (!user.is_pro && (user.usage_count + files.length) > 5) {
+    if (!user.is_pro && user.usage_count + files.length > 5) {
       return NextResponse.json(
-        { 
-          error: `Vous ne pouvez traiter que ${5 - user.usage_count} fichier(s) supplémentaire(s) ce mois-ci`,
-          upgrade_required: true
+        {
+          error: `Vous ne pouvez traiter que ${
+            5 - user.usage_count
+          } fichier(s) supplémentaire(s) ce mois-ci`,
+          upgrade_required: true,
         },
         { status: 403 }
-      )
+      );
     }
 
-    const compressedFiles: CompressedFileResponse[] = []
+    const compressedFiles: CompressedFileResponse[] = [];
 
     // Traiter chaque fichier
     for (let i = 0; i < files.length; i++) {
-      const file = files[i]
-      const originalSize = originalSizes[i] ? parseInt(originalSizes[i]) : file.size // Utiliser la vraie taille originale
-      
+      const file = files[i];
+      const originalSize = originalSizes[i]
+        ? parseInt(originalSizes[i])
+        : file.size; // Utiliser la vraie taille originale
+
       try {
         // Validation
         validateFile({
           size: file.size,
           type: file.type,
-          name: file.name
-        })
+          name: file.name,
+        });
 
         // Convertir File en Buffer
-        const arrayBuffer = await file.arrayBuffer()
-        const buffer = Buffer.from(arrayBuffer)
-        
+        const arrayBuffer = await file.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+
         // Compresser
-        const result = await FileCompressor.compressFile(buffer, file.type)
-        
+        const result = await FileCompressor.compressFile(buffer, file.type);
+
         // Générer un ID et sauvegarder
-        const id = generateFileId()
+        const id = generateFileId();
         const downloadUrl = await saveCompressedFile(
-          result.buffer, 
-          file.name, 
+          result.buffer,
+          file.name,
           id
-        )
+        );
 
         // Calculer le vrai ratio de compression (taille originale → taille finale)
-        const finalSize = result.compressedSize
-        const totalCompressionRatio = Math.round(((originalSize - finalSize) / originalSize) * 100)
+        const finalSize = result.compressedSize;
+        const totalCompressionRatio = Math.round(
+          ((originalSize - finalSize) / originalSize) * 100
+        );
 
         compressedFiles.push({
           id,
@@ -158,52 +170,50 @@ export async function POST(request: NextRequest) {
           compressionRatio: Math.max(0, totalCompressionRatio), // Vrai ratio total
           downloadUrl,
           type: getFileType(result.mimeType),
-          mimeType: result.mimeType
-        })
+          mimeType: result.mimeType,
+        });
 
         // Incrémenter l'usage pour chaque fichier traité
-        await incrementUsage(user.email)
-
+        await incrementUsage(user.email);
       } catch (fileError) {
-        console.error(`Erreur traitement fichier ${file.name}:`, fileError)
+        console.error(`Erreur traitement fichier ${file.name}:`, fileError);
         // Continue avec les autres fichiers
       }
     }
 
     if (compressedFiles.length === 0) {
       return NextResponse.json(
-        { error: 'Aucun fichier n\'a pu être traité' },
+        { error: "Aucun fichier n'a pu être traité" },
         { status: 422 }
-      )
+      );
     }
 
     // Récupérer les stats mises à jour
-    const updatedUser = await getUserFromToken(token)
-    const stats = updatedUser ? getUsageStats(updatedUser) : null
+    const updatedUser = await getUserFromToken(token);
+    const stats = updatedUser ? getUsageStats(updatedUser) : null;
 
     return NextResponse.json({
       success: true,
       files: compressedFiles,
       processed: compressedFiles.length,
       total: files.length,
-      usage_stats: stats
-    })
-
+      usage_stats: stats,
+    });
   } catch (error) {
-    console.error('Erreur API compression:', error)
+    console.error("Erreur API compression:", error);
     return NextResponse.json(
-      { error: 'Erreur interne du serveur' },
+      { error: "Erreur interne du serveur" },
       { status: 500 }
-    )
+    );
   }
 }
 
 // Méthode GET pour vérifier le statut de l'API
 export async function GET() {
   return NextResponse.json({
-    status: 'active',
-    supportedFormats: ['PDF', 'JPG', 'PNG', 'DOCX'],
-    maxFileSize: '10MB',
-    maxFiles: 5
-  })
+    status: "active",
+    supportedFormats: ["PDF", "JPG", "PNG", "DOCX"],
+    maxFileSize: "10MB",
+    maxFiles: 5,
+  });
 }

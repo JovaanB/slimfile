@@ -51,7 +51,7 @@ export default function CompressionResults({ files }: CompressionResultsProps) {
     link.click();
     document.body.removeChild(link);
 
-    setDownloadedFiles((prev) => new Set([...prev, file.id]));
+    setDownloadedFiles((prev) => new Set(Array.from(prev).concat(file.id)));
 
     // Message de succès
     const notification = document.createElement("div");

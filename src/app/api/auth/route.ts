@@ -24,7 +24,6 @@ export async function POST(request: NextRequest) {
       user: {
         email: user.email,
         created_at: user.created_at,
-        is_pro: user.is_pro,
         ...stats,
       },
     });
@@ -75,7 +74,6 @@ export async function GET(request: NextRequest) {
       user: {
         email: user.email,
         created_at: user.created_at,
-        is_pro: user.is_pro,
         ...stats,
       },
     });

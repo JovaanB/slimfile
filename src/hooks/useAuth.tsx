@@ -1,11 +1,11 @@
 "use client";
 
-import React, {
+import {
   useState,
   useEffect,
+  createContext,
   useContext,
   ReactNode,
-  createContext,
 } from "react";
 
 export interface AuthUser {
@@ -33,9 +33,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Vérifier l'authentification au chargement
   useEffect(() => {
     checkAuth();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const checkAuth = async () => {
     try {
