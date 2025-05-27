@@ -8,8 +8,6 @@ export async function POST(request: NextRequest) {
   try {
     const { email } = await request.json();
 
-    console.log("🔐 Tentative auth pour:", email);
-
     if (!email) {
       return NextResponse.json({ error: "Email requis" }, { status: 400 });
     }
@@ -17,9 +15,6 @@ export async function POST(request: NextRequest) {
     const { user, token } = await authenticateUser(email);
     const stats = getUsageStats(user);
 
-    console.log("✅ Auth réussie pour:", email);
-
-    // Simulation d'envoi d'email (à remplacer par un vrai service)
     console.log(`🔐 Magic link pour ${email}: ${token}`);
 
     const response = NextResponse.json({

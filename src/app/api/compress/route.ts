@@ -49,9 +49,8 @@ async function saveCompressedFile(
   try {
     // Créer le dossier si nécessaire
     await fs.mkdir(uploadDir, { recursive: true });
-    console.log("📁 Dossier tmp créé:", uploadDir);
   } catch (error) {
-    console.log("📁 Dossier tmp existe déjà ou erreur:", error);
+    console.error("📁 Dossier tmp existe déjà ou erreur:", error);
   }
 
   const filePath = path.join(uploadDir, `${id}_${fileName}`);

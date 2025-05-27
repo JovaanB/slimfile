@@ -48,7 +48,8 @@ export default function CompressPage() {
 
   const handleAuthSuccess = (userData: any) => {
     setShowAuthModal(false);
-    // L'utilisateur est maintenant dans le contexte
+    refreshUser();
+    console.log("🔍 Auth réussi, utilisateur:", userData);
   };
 
   // Affichage de chargement

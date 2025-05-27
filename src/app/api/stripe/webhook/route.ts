@@ -23,7 +23,6 @@ export async function POST(request: NextRequest) {
       // Mode développement sans vraie signature
       try {
         event = JSON.parse(body);
-        console.log("⚠️ Mode développement: signature webhook ignorée");
       } catch (err) {
         return NextResponse.json({ error: "JSON invalide" }, { status: 400 });
       }
