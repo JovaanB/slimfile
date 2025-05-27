@@ -1,0 +1,12 @@
+[
+  {
+    "email": "bienvenujovan@gmail.com",
+    "usage_count": 12,
+    "last_reset": "2025-05",
+    "created_at": "2025-05-26T17:05:33.603Z",
+    "is_pro": true,
+    "subscription_id": "sub_1RTGjjQkMUstEZ52EggD8urx",
+    "subscription_status": "active",
+    "stripe_customer_id": "cus_SO2p0RD4mzognH"
+  }
+]
