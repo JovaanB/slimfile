@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { promises as fs } from "fs";
 import path from "path";
 
-export async function GET(
-  request: NextRequest,
-  context: { params: Promise<{ filename: string }> }
-) {
+interface RouteContext {
+  params: Promise<{ filename: string }>;
+}
+
+export async function GET(request: NextRequest, context: RouteContext) {
   try {
     const { filename } = await context.params;
 
@@ -28,7 +29,7 @@ export async function GET(
       );
     }
 
-    const filePath = path.join(process.cwd(), "tmp", "compressed", filename);
+    const filePath = path.join("/tmp", "compressed", filename);
 
     // Vérifier que le fichier existe
     try {

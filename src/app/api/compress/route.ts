@@ -44,25 +44,28 @@ async function saveCompressedFile(
   fileName: string,
   id: string
 ): Promise<string> {
-  const uploadDir = path.join(process.cwd(), "tmp", "compressed");
+  const uploadDir = path.join("/tmp", "compressed"); // Utiliser /tmp sur Vercel
 
-  // Créer le dossier si nécessaire
   try {
+    // Créer le dossier si nécessaire
     await fs.mkdir(uploadDir, { recursive: true });
+    console.log("📁 Dossier tmp créé:", uploadDir);
   } catch (error) {
-    // Le dossier existe déjà
+    console.log("📁 Dossier tmp existe déjà ou erreur:", error);
   }
 
   const filePath = path.join(uploadDir, `${id}_${fileName}`);
   await fs.writeFile(filePath, buffer);
 
+  console.log("💾 Fichier sauvegardé:", filePath);
+
   // Programmer la suppression dans 1 heure
   setTimeout(async () => {
     try {
       await fs.unlink(filePath);
-      console.log(`Fichier supprimé: ${filePath}`);
+      console.log(`🗑️ Fichier supprimé: ${filePath}`);
     } catch (error) {
-      console.error(`Erreur suppression fichier: ${error}`);
+      console.error(`❌ Erreur suppression fichier: ${error}`);
     }
   }, 60 * 60 * 1000); // 1 heure
 
@@ -104,6 +107,12 @@ export async function POST(request: NextRequest) {
     const files = formData.getAll("files") as File[];
     const originalSizes = formData.getAll("originalSizes") as string[]; // Nouvelles tailles originales
 
+    console.log("📤 Fichiers reçus:", {
+      count: files.length,
+      files: files.map((f) => ({ name: f.name, size: f.size, type: f.type })),
+      originalSizes: originalSizes.length,
+    });
+
     if (!files || files.length === 0) {
       return NextResponse.json(
         { error: "Aucun fichier fourni" },
@@ -133,6 +142,13 @@ export async function POST(request: NextRequest) {
         ? parseInt(originalSizes[i])
         : file.size; // Utiliser la vraie taille originale
 
+      console.log(`🔄 Traitement fichier ${i + 1}:`, {
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        originalSize,
+      });
+
       try {
         // Validation
         validateFile({
@@ -141,12 +157,22 @@ export async function POST(request: NextRequest) {
           name: file.name,
         });
 
+        console.log(`✅ Validation OK pour: ${file.name}`);
+
         // Convertir File en Buffer
         const arrayBuffer = await file.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
 
+        console.log(`🔄 Début compression: ${file.name}`);
+
         // Compresser
         const result = await FileCompressor.compressFile(buffer, file.type);
+
+        console.log(`✅ Compression terminée: ${file.name}`, {
+          originalSize: result.originalSize,
+          compressedSize: result.compressedSize,
+          ratio: result.compressionRatio,
+        });
 
         // Générer un ID et sauvegarder
         const id = generateFileId();
@@ -173,10 +199,12 @@ export async function POST(request: NextRequest) {
           mimeType: result.mimeType,
         });
 
+        console.log(`✅ Fichier traité avec succès: ${file.name}`);
+
         // Incrémenter l'usage pour chaque fichier traité
         await incrementUsage(user.email);
       } catch (fileError) {
-        console.error(`Erreur traitement fichier ${file.name}:`, fileError);
+        console.error(`❌ Erreur traitement fichier ${file.name}:`, fileError);
         // Continue avec les autres fichiers
       }
     }
