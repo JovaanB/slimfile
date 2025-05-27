@@ -1,11 +1,13 @@
 import { type User } from "./auth";
 
-// Base de données adaptative : JSON en dev, PostgreSQL en prod
+// Base de données adaptative : JSON en dev local, PostgreSQL en prod et avec DATABASE_URL
 class Database {
-  private isProduction = process.env.NODE_ENV === "production";
+  private usePostgres =
+    process.env.DATABASE_URL &&
+    process.env.DATABASE_URL.startsWith("postgresql://");
 
   async ensureConnection() {
-    if (this.isProduction && process.env.DATABASE_URL) {
+    if (this.usePostgres) {
       await this.initializePostgres();
     }
   }
@@ -41,11 +43,11 @@ class Database {
   }
 
   async findUser(email: string): Promise<User | null> {
-    if (this.isProduction && process.env.DATABASE_URL) {
+    if (this.usePostgres) {
       return this.findUserPostgres(email);
     }
 
-    // Fallback vers JSON (développement)
+    // Fallback vers JSON (développement local)
     return this.findUserJSON(email);
   }
 
@@ -99,7 +101,7 @@ class Database {
   }
 
   async createUser(email: string): Promise<User> {
-    if (this.isProduction && process.env.DATABASE_URL) {
+    if (this.usePostgres) {
       return this.createUserPostgres(email);
     }
 
@@ -181,7 +183,7 @@ class Database {
     email: string,
     updates: Partial<User>
   ): Promise<User | null> {
-    if (this.isProduction && process.env.DATABASE_URL) {
+    if (this.usePostgres) {
       return this.updateUserPostgres(email, updates);
     }
 
