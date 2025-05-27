@@ -6,6 +6,16 @@ class Database {
     process.env.DATABASE_URL &&
     process.env.DATABASE_URL.startsWith("postgresql://");
 
+  constructor() {
+    console.log("🗄️ Database mode:", this.usePostgres ? "PostgreSQL" : "JSON");
+    if (this.usePostgres) {
+      console.log(
+        "🗄️ Database URL configurée:",
+        process.env.DATABASE_URL ? "OUI" : "NON"
+      );
+    }
+  }
+
   async ensureConnection() {
     if (this.usePostgres) {
       await this.initializePostgres();
