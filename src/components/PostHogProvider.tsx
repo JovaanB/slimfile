@@ -3,10 +3,11 @@
 
 import { useEffect } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { initPostHog } from "@/lib/posthog-client"; // Import du client uniquement
+import { initPostHog } from "@/lib/posthog-client";
 import posthog from "posthog-js";
+import { Suspense } from "react";
 
-export function PostHogProvider({ children }: { children: React.ReactNode }) {
+function PostHogProviderInternal({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
@@ -28,12 +29,13 @@ export function PostHogProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // Track page views seulement si PostHog est initialisé
-    if (pathname && typeof window !== "undefined" && window.posthog) {
+    if (pathname && typeof window !== "undefined") {
       try {
         let url = window.origin + pathname;
         if (searchParams.toString()) {
           url = url + `?${searchParams.toString()}`;
         }
+        // Utiliser posthog directement au lieu de window.posthog
         posthog.capture("$pageview", { $current_url: url });
       } catch (error) {
         console.error("❌ Erreur pageview tracking:", error);
@@ -44,12 +46,20 @@ export function PostHogProvider({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+export function PostHogProvider({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense fallback={<>{children}</>}>
+      <PostHogProviderInternal>{children}</PostHogProviderInternal>
+    </Suspense>
+  );
+}
+
 // Hook sécurisé pour utiliser PostHog
 export function usePostHog() {
   return {
     track: (eventName: string, properties?: Record<string, any>) => {
       try {
-        if (typeof window !== "undefined" && window.posthog) {
+        if (typeof window !== "undefined") {
           posthog.capture(eventName, properties);
         }
       } catch (error) {
@@ -58,7 +68,7 @@ export function usePostHog() {
     },
     identify: (userId: string, properties?: Record<string, any>) => {
       try {
-        if (typeof window !== "undefined" && window.posthog) {
+        if (typeof window !== "undefined") {
           posthog.identify(userId, properties);
         }
       } catch (error) {
@@ -67,7 +77,7 @@ export function usePostHog() {
     },
     reset: () => {
       try {
-        if (typeof window !== "undefined" && window.posthog) {
+        if (typeof window !== "undefined") {
           posthog.reset();
         }
       } catch (error) {

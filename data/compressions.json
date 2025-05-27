@@ -1,0 +1,28 @@
+[
+  {
+    "id": "1n6hh37yimb71qg9b",
+    "user_email": "bienvenujovan+2@gmail.com",
+    "file_name": "2024_world_championship_assault-661.jpeg",
+    "original_size": 1347877,
+    "compressed_size": 177774,
+    "compression_ratio": 87,
+    "mime_type": "image/jpeg",
+    "download_url": "/api/download/b5wrrji1lmb71qg9a_2024_world_championship_assault-661.jpeg",
+    "is_available": true,
+    "created_at": "2025-05-27T21:46:32.783Z",
+    "expires_at": "2025-05-27T22:46:32.783Z"
+  },
+  {
+    "id": "adq5btu2lmb71r5ka",
+    "user_email": "bienvenujovan+2@gmail.com",
+    "file_name": "IMG_0487.JPG",
+    "original_size": 395001,
+    "compressed_size": 225405,
+    "compression_ratio": 43,
+    "mime_type": "image/jpeg",
+    "download_url": "/api/download/tp33de39wmb71r5k9_IMG_0487.JPG",
+    "is_available": true,
+    "created_at": "2025-05-27T21:47:05.578Z",
+    "expires_at": "2025-05-27T22:47:05.578Z"
+  }
+]

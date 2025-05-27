@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { FileCompressor, validateFile } from "@/lib/compression";
+import { dbExtended } from "@/lib/database";
 import {
   getUserFromToken,
   incrementUsage,
   canCompress,
   getUsageStats,
 } from "@/lib/auth";
-import { serverPostHog } from "@/lib/posthog"; // Import server PostHog
+import { serverPostHog } from "@/lib/posthog";
 import { promises as fs } from "fs";
 import path from "path";
 
@@ -283,8 +284,6 @@ export async function POST(request: NextRequest) {
           (compressionStats.fileTypes[compressedFile.type] || 0) + 1;
         compressionStats.processingTimes.push(fileProcessingTime);
 
-        // 📊 Track individual file compression
-        console.log({ serverPostHog });
         serverPostHog.capture({
           distinctId: user.email,
           event: "file_compressed",
@@ -303,9 +302,27 @@ export async function POST(request: NextRequest) {
           },
         });
 
+        try {
+          await dbExtended.saveCompressionRecord(
+            user.email,
+            file.name,
+            originalSize,
+            finalSize,
+            totalCompressionRatio,
+            result.mimeType,
+            downloadUrl
+          );
+
+          console.log(`✅ Compression sauvegardée dans DB: ${file.name}`);
+        } catch (saveError) {
+          console.error(
+            `❌ Erreur sauvegarde DB pour ${file.name}:`,
+            saveError
+          );
+        }
+
         console.log(`✅ Fichier traité avec succès: ${file.name}`);
 
-        // Incrémenter l'usage pour chaque fichier traité
         await incrementUsage(user.email);
       } catch (fileError) {
         console.error(`❌ Erreur traitement fichier ${file.name}:`, fileError);

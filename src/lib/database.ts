@@ -1,7 +1,23 @@
+// lib/database.ts (extension de ton fichier existant)
 import { type User } from "./auth";
 
-// Base de données adaptative : JSON en dev local, PostgreSQL en prod et avec DATABASE_URL
-class Database {
+// Types pour les compressions
+export interface CompressionRecord {
+  id: string;
+  user_email: string;
+  file_name: string;
+  original_size: number;
+  compressed_size: number;
+  compression_ratio: number;
+  mime_type: string;
+  download_url?: string;
+  is_available: boolean;
+  created_at: string;
+  expires_at: string;
+}
+
+// Ajoute ces méthodes à ta classe Database existante
+export class DatabaseExtended {
   private usePostgres =
     process.env.DATABASE_URL &&
     process.env.DATABASE_URL.startsWith("postgresql://");
@@ -23,13 +39,13 @@ class Database {
   }
 
   private async initializePostgres() {
-    // Créer la table users si elle n'existe pas
     try {
       const { Pool } = require("pg");
       const pool = new Pool({
         connectionString: process.env.DATABASE_URL,
       });
 
+      // Table users (existante)
       await pool.query(`
         CREATE TABLE IF NOT EXISTS users (
           id SERIAL PRIMARY KEY,
@@ -45,10 +61,351 @@ class Database {
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
       `);
-      console.log("✅ Table users créée/vérifiée");
+
+      // Nouvelle table compressions pour le dashboard
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS compressions (
+          id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+          user_email VARCHAR(255) NOT NULL,
+          file_name TEXT NOT NULL,
+          original_size BIGINT NOT NULL,
+          compressed_size BIGINT NOT NULL,
+          compression_ratio INTEGER NOT NULL,
+          mime_type VARCHAR(100) NOT NULL,
+          download_url TEXT,
+          is_available BOOLEAN DEFAULT true,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          expires_at TIMESTAMP DEFAULT (CURRENT_TIMESTAMP + INTERVAL '1 hour')
+        )
+      `);
+
+      // Index pour les performances
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_compressions_user_email 
+        ON compressions(user_email)
+      `);
+
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_compressions_created_at 
+        ON compressions(created_at)
+      `);
+
+      console.log("✅ Tables users et compressions créées/vérifiées");
       await pool.end();
     } catch (error) {
-      console.error("❌ Erreur création table:", error);
+      console.error("❌ Erreur création tables:", error);
+    }
+  }
+
+  // === MÉTHODES COMPRESSIONS ===
+
+  async saveCompressionRecord(
+    userEmail: string,
+    fileName: string,
+    originalSize: number,
+    compressedSize: number,
+    compressionRatio: number,
+    mimeType: string,
+    downloadUrl?: string
+  ): Promise<CompressionRecord> {
+    if (this.usePostgres) {
+      return this.saveCompressionPostgres(
+        userEmail,
+        fileName,
+        originalSize,
+        compressedSize,
+        compressionRatio,
+        mimeType,
+        downloadUrl
+      );
+    }
+
+    return this.saveCompressionJSON(
+      userEmail,
+      fileName,
+      originalSize,
+      compressedSize,
+      compressionRatio,
+      mimeType,
+      downloadUrl
+    );
+  }
+
+  private async saveCompressionPostgres(
+    userEmail: string,
+    fileName: string,
+    originalSize: number,
+    compressedSize: number,
+    compressionRatio: number,
+    mimeType: string,
+    downloadUrl?: string
+  ): Promise<CompressionRecord> {
+    try {
+      const { Pool } = require("pg");
+      const pool = new Pool({
+        connectionString: process.env.DATABASE_URL,
+      });
+
+      const result = await pool.query(
+        `
+        INSERT INTO compressions (
+          user_email, file_name, original_size, compressed_size, 
+          compression_ratio, mime_type, download_url, is_available
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, true)
+        RETURNING *
+        `,
+        [
+          userEmail,
+          fileName,
+          originalSize,
+          compressedSize,
+          compressionRatio,
+          mimeType,
+          downloadUrl,
+        ]
+      );
+
+      await pool.end();
+
+      const row = result.rows[0];
+      return {
+        id: row.id,
+        user_email: row.user_email,
+        file_name: row.file_name,
+        original_size: row.original_size,
+        compressed_size: row.compressed_size,
+        compression_ratio: row.compression_ratio,
+        mime_type: row.mime_type,
+        download_url: row.download_url,
+        is_available: row.is_available,
+        created_at: row.created_at.toISOString(),
+        expires_at: row.expires_at.toISOString(),
+      };
+    } catch (error) {
+      console.error("Erreur sauvegarde compression PostgreSQL:", error);
+      throw error;
+    }
+  }
+
+  private async saveCompressionJSON(
+    userEmail: string,
+    fileName: string,
+    originalSize: number,
+    compressedSize: number,
+    compressionRatio: number,
+    mimeType: string,
+    downloadUrl?: string
+  ): Promise<CompressionRecord> {
+    try {
+      const fs = require("fs").promises;
+      const path = require("path");
+
+      const dbPath = path.join(process.cwd(), "data", "compressions.json");
+
+      // Créer le dossier data s'il n'existe pas
+      await fs.mkdir(path.dirname(dbPath), { recursive: true });
+
+      // Lire les compressions existantes
+      let compressions: CompressionRecord[] = [];
+      try {
+        const data = await fs.readFile(dbPath, "utf-8");
+        compressions = JSON.parse(data);
+      } catch {
+        // Le fichier n'existe pas encore
+      }
+
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + 60 * 60 * 1000); // +1 heure
+
+      const newCompression: CompressionRecord = {
+        id: generateId(),
+        user_email: userEmail,
+        file_name: fileName,
+        original_size: originalSize,
+        compressed_size: compressedSize,
+        compression_ratio: compressionRatio,
+        mime_type: mimeType,
+        download_url: downloadUrl,
+        is_available: true,
+        created_at: now.toISOString(),
+        expires_at: expiresAt.toISOString(),
+      };
+
+      compressions.push(newCompression);
+      await fs.writeFile(dbPath, JSON.stringify(compressions, null, 2));
+      return newCompression;
+    } catch (error) {
+      console.error("Erreur sauvegarde compression JSON:", error);
+      throw error;
+    }
+  }
+
+  async getCompressionHistory(
+    userEmail: string,
+    startDate?: Date,
+    endDate?: Date,
+    limit: number = 50
+  ): Promise<CompressionRecord[]> {
+    if (this.usePostgres) {
+      return this.getCompressionHistoryPostgres(
+        userEmail,
+        startDate,
+        endDate,
+        limit
+      );
+    }
+
+    return this.getCompressionHistoryJSON(userEmail, startDate, endDate, limit);
+  }
+
+  private async getCompressionHistoryPostgres(
+    userEmail: string,
+    startDate?: Date,
+    endDate?: Date,
+    limit: number = 50
+  ): Promise<CompressionRecord[]> {
+    try {
+      const { Pool } = require("pg");
+      const pool = new Pool({
+        connectionString: process.env.DATABASE_URL,
+      });
+
+      let query = `
+        SELECT * FROM compressions 
+        WHERE user_email = $1
+      `;
+      const values = [userEmail];
+      let paramIndex = 2;
+
+      if (startDate) {
+        query += ` AND created_at >= $${paramIndex}`;
+        values.push(startDate.toISOString());
+        paramIndex++;
+      }
+
+      if (endDate) {
+        query += ` AND created_at <= $${paramIndex}`;
+        values.push(endDate.toISOString());
+        paramIndex++;
+      }
+
+      query += ` ORDER BY created_at DESC LIMIT $${paramIndex}`;
+      values.push(limit.toString());
+
+      const result = await pool.query(query, values);
+      await pool.end();
+
+      return result.rows.map((row: any) => ({
+        id: row.id,
+        user_email: row.user_email,
+        file_name: row.file_name,
+        original_size: row.original_size,
+        compressed_size: row.compressed_size,
+        compression_ratio: row.compression_ratio,
+        mime_type: row.mime_type,
+        download_url: row.download_url,
+        is_available: row.is_available,
+        created_at: row.created_at.toISOString(),
+        expires_at: row.expires_at.toISOString(),
+      }));
+    } catch (error) {
+      console.error("Erreur récupération historique PostgreSQL:", error);
+      return [];
+    }
+  }
+
+  private async getCompressionHistoryJSON(
+    userEmail: string,
+    startDate?: Date,
+    endDate?: Date,
+    limit: number = 50
+  ): Promise<CompressionRecord[]> {
+    try {
+      const fs = require("fs").promises;
+      const path = require("path");
+
+      const dbPath = path.join(process.cwd(), "data", "compressions.json");
+
+      const data = await fs.readFile(dbPath, "utf-8");
+      let compressions: CompressionRecord[] = JSON.parse(data);
+
+      // Filtrer par utilisateur
+      compressions = compressions.filter((c) => c.user_email === userEmail);
+
+      // Filtrer par dates
+      if (startDate) {
+        compressions = compressions.filter(
+          (c) => new Date(c.created_at) >= startDate
+        );
+      }
+      if (endDate) {
+        compressions = compressions.filter(
+          (c) => new Date(c.created_at) <= endDate
+        );
+      }
+
+      // Trier par date décroissante et limiter
+      compressions.sort(
+        (a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+
+      return compressions.slice(0, limit);
+    } catch (error) {
+      console.error("Erreur récupération historique JSON:", error);
+      return [];
+    }
+  }
+
+  async cleanupExpiredFiles(): Promise<void> {
+    if (this.usePostgres) {
+      await this.cleanupExpiredFilesPostgres();
+    } else {
+      await this.cleanupExpiredFilesJSON();
+    }
+  }
+
+  private async cleanupExpiredFilesPostgres(): Promise<void> {
+    try {
+      const { Pool } = require("pg");
+      const pool = new Pool({
+        connectionString: process.env.DATABASE_URL,
+      });
+
+      await pool.query(`
+        UPDATE compressions 
+        SET is_available = false 
+        WHERE expires_at < CURRENT_TIMESTAMP AND is_available = true
+      `);
+
+      await pool.end();
+    } catch (error) {
+      console.error("Erreur nettoyage fichiers expirés PostgreSQL:", error);
+    }
+  }
+
+  private async cleanupExpiredFilesJSON(): Promise<void> {
+    try {
+      const fs = require("fs").promises;
+      const path = require("path");
+
+      const dbPath = path.join(process.cwd(), "data", "compressions.json");
+
+      const data = await fs.readFile(dbPath, "utf-8");
+      let compressions: CompressionRecord[] = JSON.parse(data);
+
+      const now = new Date();
+      compressions = compressions.map((c) => {
+        if (new Date(c.expires_at) < now && c.is_available) {
+          return { ...c, is_available: false };
+        }
+        return c;
+      });
+
+      await fs.writeFile(dbPath, JSON.stringify(compressions, null, 2));
+    } catch (error) {
+      console.error("Erreur nettoyage fichiers expirés JSON:", error);
     }
   }
 
@@ -295,4 +652,87 @@ class Database {
   }
 }
 
-export const db = new Database();
+// Utilitaires
+function generateId(): string {
+  return Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
+}
+
+export function getFileTypeFromMime(
+  mimeType: string
+): "pdf" | "image" | "document" {
+  if (mimeType === "application/pdf") return "pdf";
+  if (mimeType.startsWith("image/")) return "image";
+  return "document";
+}
+
+export function calculateDashboardStats(compressions: CompressionRecord[]) {
+  if (compressions.length === 0) {
+    return {
+      totalCompressions: 0,
+      totalSizeSavedMB: 0,
+      avgCompressionRatio: 0,
+      totalOriginalSizeMB: 0,
+      totalCompressedSizeMB: 0,
+      thisMonthCompressions: 0,
+      favoriteFileType: "PDF",
+      currentMonthSavings: 0,
+      efficiencyRating: 0,
+    };
+  }
+
+  const totalOriginalSize = compressions.reduce(
+    (sum, c) => sum + c.original_size,
+    0
+  );
+  const totalCompressedSize = compressions.reduce(
+    (sum, c) => sum + c.compressed_size,
+    0
+  );
+  const totalSizeSaved = totalOriginalSize - totalCompressedSize;
+
+  // Compressions ce mois-ci
+  const thisMonth = new Date();
+  thisMonth.setDate(1);
+  thisMonth.setHours(0, 0, 0, 0);
+
+  const thisMonthCompressions = compressions.filter(
+    (c) => new Date(c.created_at) >= thisMonth
+  ).length;
+
+  const currentMonthSavings = compressions
+    .filter((c) => new Date(c.created_at) >= thisMonth)
+    .reduce((sum, c) => sum + (c.original_size - c.compressed_size), 0);
+
+  // Type de fichier le plus populaire
+  const fileTypeCounts = compressions.reduce((acc, c) => {
+    const type = getFileTypeFromMime(c.mime_type);
+    acc[type] = (acc[type] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const favoriteFileType =
+    Object.entries(fileTypeCounts)
+      .sort(([, a], [, b]) => b - a)[0]?.[0]
+      ?.toUpperCase() || "PDF";
+
+  return {
+    totalCompressions: compressions.length,
+    totalSizeSavedMB: totalSizeSaved / (1024 * 1024),
+    avgCompressionRatio: Math.round(
+      compressions.reduce((sum, c) => sum + c.compression_ratio, 0) /
+        compressions.length
+    ),
+    totalOriginalSizeMB: totalOriginalSize / (1024 * 1024),
+    totalCompressedSizeMB: totalCompressedSize / (1024 * 1024),
+    thisMonthCompressions,
+    favoriteFileType,
+    currentMonthSavings: currentMonthSavings / (1024 * 1024),
+    efficiencyRating: Math.min(
+      100,
+      Math.round((totalSizeSaved / totalOriginalSize) * 100)
+    ),
+  };
+}
+
+// Instance singleton
+export const dbExtended = new DatabaseExtended();

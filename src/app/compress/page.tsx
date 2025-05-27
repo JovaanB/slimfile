@@ -173,19 +173,53 @@ export default function CompressPage() {
         <header className="bg-white shadow-sm border-b">
           <div className="max-w-7xl mx-auto px-4 py-4">
             <div className="flex justify-between items-center">
-              <div className="flex items-center space-x-4">
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-sky-300 to-violet-500 bg-clip-text text-transparent">
-                  SlimFile
-                </h1>
-                <span className="text-gray-400">•</span>
-                <span className="text-gray-600">Compresseur de fichiers</span>
+              <div className="flex items-center space-x-6">
+                <div className="flex items-center space-x-4">
+                  <h1 className="text-2xl font-bold bg-gradient-to-r from-sky-300 to-violet-500 bg-clip-text text-transparent">
+                    SlimFile
+                  </h1>
+                  <span className="text-gray-400">•</span>
+                  <span className="text-gray-600">Compresseur de fichiers</span>
+                </div>
+
+                {/* Navigation */}
+                {user && (
+                  <nav className="hidden md:flex space-x-6">
+                    <span className="text-sky-600 font-medium">Compresser</span>
+                    <button
+                      onClick={() => {
+                        track("dashboard_nav_clicked", {
+                          source: "compress_page",
+                        });
+                        window.location.href = "/dashboard";
+                      }}
+                      className="text-gray-600 hover:text-gray-900 transition-colors flex items-center space-x-1"
+                    >
+                      <span>📊</span>
+                      <span>Dashboard</span>
+                    </button>
+                  </nav>
+                )}
               </div>
 
               <div className="flex items-center space-x-4">
-                {user && <UsageCounter current={user.current} max={user.max} />}
+                {user && !user.is_pro && (
+                  <UsageCounter current={user.current} max={user.max} />
+                )}
 
                 {user && (
                   <div className="flex items-center space-x-3">
+                    {/* Plan Badge */}
+                    <div
+                      className={`hidden sm:flex px-3 py-1 rounded-full text-xs font-medium ${
+                        user.is_pro
+                          ? "bg-gradient-to-r from-sky-500 to-violet-500 text-white"
+                          : "bg-gray-100 text-gray-600"
+                      }`}
+                    >
+                      {user.is_pro ? "⚡ Pro" : "🆓 Gratuit"}
+                    </div>
+
                     <span className="text-sm text-gray-600">{user.email}</span>
                     <button
                       onClick={handleLogout}
@@ -275,6 +309,50 @@ export default function CompressPage() {
 
             {/* Sidebar avec conseils et upgrade */}
             <div className="space-y-6">
+              {/* Dashboard Quick Access */}
+              {user && user.current > 0 && (
+                <div className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-3xl shadow-lg p-6 text-white">
+                  <h3 className="font-semibold mb-2 flex items-center">
+                    <span className="mr-2">📊</span>
+                    Voir mes statistiques
+                  </h3>
+                  <p className="text-indigo-100 text-sm mb-4">
+                    Découvrez combien d'espace vous avez économisé et suivez vos
+                    performances.
+                  </p>
+
+                  {/* Mini Stats Preview */}
+                  <div className="grid grid-cols-2 gap-3 mb-4">
+                    <div className="bg-white/20 rounded-xl p-3 text-center">
+                      <div className="text-lg font-bold">
+                        {user.current || 0}
+                      </div>
+                      <div className="text-xs text-indigo-100">
+                        Compressions
+                      </div>
+                    </div>
+                    <div className="bg-white/20 rounded-xl p-3 text-center">
+                      <div className="text-lg font-bold">
+                        {user.is_pro ? "∞" : `${user.remaining || 0}`}
+                      </div>
+                      <div className="text-xs text-indigo-100">Restantes</div>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      track("dashboard_quick_access_clicked", {
+                        source: "sidebar",
+                        user_plan: user.is_pro ? "pro" : "free",
+                      });
+                      window.location.href = "/dashboard";
+                    }}
+                    className="w-full bg-white text-indigo-600 py-2 rounded-full font-semibold hover:bg-gray-50 transition-colors"
+                  >
+                    Accéder au Dashboard
+                  </button>
+                </div>
+              )}
               {/* Conseils d'utilisation */}
               <div className="bg-white rounded-3xl shadow-lg p-6">
                 <h3 className="font-semibold text-gray-900 mb-4 flex items-center">
