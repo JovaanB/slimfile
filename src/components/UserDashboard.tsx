@@ -60,8 +60,59 @@ export default function UserDashboard() {
   };
 
   const formatFileSize = (sizeInMB: number) => {
-    if (sizeInMB < 1) return `${(sizeInMB * 1024).toFixed(0)} KB`;
-    return `${sizeInMB.toFixed(1)} MB`;
+    // Convertir MB en bytes pour avoir plus de flexibilité
+    const sizeInBytes = sizeInMB * 1024 * 1024;
+
+    if (sizeInBytes === 0) return "0 B";
+
+    const k = 1024;
+    const sizes = ["B", "KB", "MB", "GB", "TB"];
+    const i = Math.floor(Math.log(sizeInBytes) / Math.log(k));
+
+    const size = sizeInBytes / Math.pow(k, i);
+
+    // Arrondir intelligemment selon la taille
+    let formattedSize;
+    if (i === 0) {
+      // Bytes
+      formattedSize = Math.round(size).toString();
+    } else if (i === 1) {
+      // KB
+      formattedSize = size < 10 ? size.toFixed(1) : Math.round(size).toString();
+    } else {
+      // MB, GB, TB
+      formattedSize = size < 10 ? size.toFixed(1) : size.toFixed(0);
+    }
+
+    return `${formattedSize} ${sizes[i]}`;
+  };
+
+  // Fonction spécialisée pour les très gros nombres (stats cards)
+  const formatLargeSize = (sizeInMB: number) => {
+    if (sizeInMB === 0) return "0 MB";
+
+    const sizeInBytes = sizeInMB * 1024 * 1024;
+    const k = 1024;
+    const sizes = ["B", "KB", "MB", "GB", "TB"];
+    const i = Math.floor(Math.log(sizeInBytes) / Math.log(k));
+
+    const size = sizeInBytes / Math.pow(k, i);
+
+    // Pour les stats cards, on veut plus de précision
+    let formattedSize;
+    if (i <= 1) {
+      // B, KB
+      formattedSize = Math.round(size).toString();
+    } else if (i === 2) {
+      // MB
+      formattedSize =
+        size < 100 ? size.toFixed(1) : Math.round(size).toString();
+    } else {
+      // GB, TB
+      formattedSize = size.toFixed(2);
+    }
+
+    return `${formattedSize} ${sizes[i]}`;
   };
 
   const formatDate = (dateString: string) => {
@@ -161,7 +212,7 @@ export default function UserDashboard() {
                   {achievement.level}
                 </div>
                 <div className="text-sm text-gray-500">
-                  {stats?.totalCompressions} compressions
+                  {stats?.totalCompressions || 0} compressions
                 </div>
               </div>
             </div>
@@ -203,13 +254,13 @@ export default function UserDashboard() {
                 <div>
                   <p className="text-sky-100 text-sm">Total économisé</p>
                   <p className="text-3xl font-bold">
-                    {formatFileSize(stats?.totalSizeSavedMB || 0)}
+                    {formatLargeSize(stats?.totalSizeSavedMB || 0)}
                   </p>
                 </div>
                 <TrophyIcon className="w-8 h-8 text-sky-200" />
               </div>
               <div className="mt-4 text-sky-100 text-sm">
-                Sur {formatFileSize(stats?.totalOriginalSizeMB || 0)} traités
+                Sur {formatLargeSize(stats?.totalOriginalSizeMB || 0)} traités
               </div>
             </div>
 
@@ -364,7 +415,11 @@ export default function UserDashboard() {
                           {formatFileSize(item.compressedSize)}
                         </div>
                         <div className="text-sm font-medium text-green-600">
-                          -{item.compressionRatio}% économisé
+                          -{item.compressionRatio}% •{" "}
+                          {formatFileSize(
+                            item.originalSize - item.compressedSize
+                          )}{" "}
+                          économisé
                         </div>
                       </div>
 

@@ -6,8 +6,9 @@ import { usePostHog } from "@/hooks/usePosthog";
 import AuthModal from "@/components/AuthModal";
 import BatchFileUploader from "@/components/BatchFileUploader";
 import CompressionResults from "@/components/CompressionResults";
-import UsageCounter from "@/components/UsageCounter";
 import UpgradeModal from "@/components/UpgradeModal";
+import MobileNavbar from "@/components/MobileNavbar";
+import { useRouter } from "next/navigation";
 
 export interface CompressedFile {
   id: string;
@@ -22,9 +23,10 @@ export interface CompressedFile {
 export default function CompressPage() {
   const { user, isLoading, isAuthenticated, logout, refreshUser } = useAuth();
   const { track, identify, events } = usePostHog();
+  const router = useRouter();
 
   const [compressedFiles, setCompressedFiles] = useState<CompressedFile[]>([]);
-  const [isCompressing, setIsCompressing] = useState(false);
+  const [_isCompressing, setIsCompressing] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
@@ -137,13 +139,10 @@ export default function CompressPage() {
   };
 
   const handleLogout = () => {
-    // 📊 Track logout
     track("user_logout", {
-      session_duration: "unknown", // Tu peux calculer si besoin
+      session_duration: "unknown",
       compressions_this_session: compressedFiles.length,
     });
-
-    logout();
   };
 
   // Affichage de chargement
@@ -158,81 +157,19 @@ export default function CompressPage() {
     );
   }
 
-  // Debug de l'état utilisateur
-  console.log("🔍 État utilisateur:", {
-    user,
-    isAuthenticated,
-    isLoading,
-    canCompress: user ? user.remaining > 0 || user.is_pro : false,
-  });
-
   return (
     <>
       <div className="min-h-screen bg-gray-50">
-        {/* Header */}
-        <header className="bg-white shadow-sm border-b">
-          <div className="max-w-7xl mx-auto px-4 py-4">
-            <div className="flex justify-between items-center">
-              <div className="flex items-center space-x-6">
-                <div className="flex items-center space-x-4">
-                  <h1 className="text-2xl font-bold bg-gradient-to-r from-sky-300 to-violet-500 bg-clip-text text-transparent">
-                    SlimFile
-                  </h1>
-                  <span className="text-gray-400">•</span>
-                  <span className="text-gray-600">Compresseur de fichiers</span>
-                </div>
-
-                {/* Navigation */}
-                {user && (
-                  <nav className="hidden md:flex space-x-6">
-                    <span className="text-sky-600 font-medium">Compresser</span>
-                    <button
-                      onClick={() => {
-                        track("dashboard_nav_clicked", {
-                          source: "compress_page",
-                        });
-                        window.location.href = "/dashboard";
-                      }}
-                      className="text-gray-600 hover:text-gray-900 transition-colors flex items-center space-x-1"
-                    >
-                      <span>📊</span>
-                      <span>Dashboard</span>
-                    </button>
-                  </nav>
-                )}
-              </div>
-
-              <div className="flex items-center space-x-4">
-                {user && !user.is_pro && (
-                  <UsageCounter current={user.current} max={user.max} />
-                )}
-
-                {user && (
-                  <div className="flex items-center space-x-3">
-                    {/* Plan Badge */}
-                    <div
-                      className={`hidden sm:flex px-3 py-1 rounded-full text-xs font-medium ${
-                        user.is_pro
-                          ? "bg-gradient-to-r from-sky-500 to-violet-500 text-white"
-                          : "bg-gray-100 text-gray-600"
-                      }`}
-                    >
-                      {user.is_pro ? "⚡ Pro" : "🆓 Gratuit"}
-                    </div>
-
-                    <span className="text-sm text-gray-600">{user.email}</span>
-                    <button
-                      onClick={handleLogout}
-                      className="text-sm text-gray-500 hover:text-gray-700 transition-colors"
-                    >
-                      Déconnexion
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </header>
+        <MobileNavbar
+          user={user}
+          currentPage="compress"
+          onNavigate={(page) => {
+            if (page !== "compress") {
+              router.push(`/${page}`);
+            }
+          }}
+          onLogout={handleLogout}
+        />
 
         <main className="max-w-7xl mx-auto px-4 py-8">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

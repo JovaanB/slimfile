@@ -74,7 +74,7 @@ export default function HomePage() {
           <div className="absolute bottom-32 left-1/3 w-40 h-40 bg-white rounded-full blur-3xl"></div>
         </div>
 
-        <div className="relative z-10 flex items-center justify-center min-h-screen px-4 text-center">
+        <div className="relative z-10 flex items-center justify-center min-h-screen text-center">
           <div className="max-w-4xl">
             {/* Titre principal */}
             <h1 className="text-4xl md:text-6xl font-extrabold text-white mb-6 animate-fade-in-up">
@@ -170,7 +170,7 @@ export default function HomePage() {
             </a>
 
             {/* Stats */}
-            <div className="flex flex-col md:flex-row justify-center gap-8 mt-12 text-white animate-fade-in-up">
+            <div className="flex flex-col md:flex-row justify-center px-4 gap-8 mt-12 text-white animate-fade-in-up">
               <div className="text-center">
                 <div className="text-3xl font-bold">12,847</div>
                 <div className="text-white/80">Fichiers compressés</div>
