@@ -16,7 +16,6 @@ export interface CompressionRecord {
   expires_at: string;
 }
 
-// Ajoute ces méthodes à ta classe Database existante
 export class DatabaseExtended {
   private usePostgres =
     process.env.DATABASE_URL &&

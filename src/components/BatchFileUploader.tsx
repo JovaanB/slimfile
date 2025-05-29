@@ -1,10 +1,9 @@
-"use client";
-
-import { useState, useRef, useCallback } from "react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
 import {
   CloudArrowUpIcon,
   ExclamationTriangleIcon,
   SparklesIcon,
+  XMarkIcon,
 } from "@heroicons/react/24/outline";
 import { CompressedFile } from "@/app/compress/page";
 
@@ -27,6 +26,7 @@ interface FileProgress {
     | "completed"
     | "error";
   error?: string;
+  preview?: string;
   clientOptimization?: {
     originalSize: number;
     optimizedSize: number;
@@ -43,10 +43,8 @@ export default function BatchFileUploader({
   const [isDragOver, setIsDragOver] = useState(false);
   const [fileProgresses, setFileProgresses] = useState<FileProgress[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dragCounterRef = useRef(0);
 
-  /**
-   * Optimise une image côté client
-   */
   const optimizeImage = async (
     file: File
   ): Promise<{ file: File; stats: any }> => {
@@ -56,7 +54,6 @@ export default function BatchFileUploader({
       const img = new Image();
 
       img.onload = () => {
-        // Calculer nouvelles dimensions
         let { width, height } = img;
         const maxDimension = 1920;
 
@@ -74,7 +71,6 @@ export default function BatchFileUploader({
         canvas.height = height;
         ctx.drawImage(img, 0, 0, width, height);
 
-        // Conversion avec qualité adaptative
         const quality = file.size > 2 * 1024 * 1024 ? 0.7 : 0.8;
         const outputType =
           file.type === "image/png" && file.size > 1024 * 1024
@@ -100,7 +96,6 @@ export default function BatchFileUploader({
                 },
               });
             } else {
-              // Fallback si échec
               resolve({ file, stats: null });
             }
           },
@@ -109,56 +104,54 @@ export default function BatchFileUploader({
         );
       };
 
-      img.onerror = () => {
-        resolve({ file, stats: null });
-      };
-
+      img.onerror = () => resolve({ file, stats: null });
       img.src = URL.createObjectURL(file);
     });
   };
 
-  /**
-   * Traite un fichier individuellement
-   */
   const processFile = async (file: File, index: number): Promise<File> => {
     const id = `file-${index}`;
 
-    // Mise à jour : optimisation
     setFileProgresses((prev) =>
       prev.map((fp) =>
-        fp.id === id ? { ...fp, status: "optimizing", progress: 25 } : fp
+        fp.id === id ? { ...fp, status: "optimizing", progress: 15 } : fp
       )
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    setFileProgresses((prev) =>
+      prev.map((fp) => (fp.id === id ? { ...fp, progress: 30 } : fp))
     );
 
     let processedFile = file;
     let clientOptimization = undefined;
 
-    // Optimisation pour les images
     if (file.type.startsWith("image/")) {
       try {
         const result = await optimizeImage(file);
         processedFile = result.file;
         clientOptimization = result.stats;
+
+        // Mise à jour progressive
+        setFileProgresses((prev) =>
+          prev.map((fp) => (fp.id === id ? { ...fp, progress: 45 } : fp))
+        );
       } catch (error) {
         console.warn("Optimisation image échouée:", error);
       }
-    }
-
-    // Simulation délai (pour autres types)
-    if (!file.type.startsWith("image/")) {
+    } else {
+      // Simulation pour autres types avec progression
       await new Promise((resolve) => setTimeout(resolve, 200));
+      setFileProgresses((prev) =>
+        prev.map((fp) => (fp.id === id ? { ...fp, progress: 45 } : fp))
+      );
     }
 
-    // Mise à jour : optimisation terminée
     setFileProgresses((prev) =>
       prev.map((fp) =>
         fp.id === id
-          ? {
-              ...fp,
-              status: "uploading",
-              progress: 50,
-              clientOptimization,
-            }
+          ? { ...fp, status: "uploading", progress: 50, clientOptimization }
           : fp
       )
     );
@@ -166,26 +159,18 @@ export default function BatchFileUploader({
     return processedFile;
   };
 
-  /**
-   * Upload vers le serveur
-   */
   const uploadToServer = async (
     processedFiles: File[],
     originalFiles: File[]
   ) => {
     const formData = new FormData();
 
-    // Ajouter les fichiers traités
-    processedFiles.forEach((file) => {
-      formData.append("files", file);
-    });
+    processedFiles.forEach((file) => formData.append("files", file));
+    originalFiles.forEach((file) =>
+      formData.append("originalSizes", file.size.toString())
+    );
 
-    // Ajouter les tailles originales pour le calcul correct
-    originalFiles.forEach((file) => {
-      formData.append("originalSizes", file.size.toString());
-    });
-
-    // Mise à jour : compression serveur
+    // Animation de progression pendant l'upload
     setFileProgresses((prev) =>
       prev.map((fp) => ({
         ...fp,
@@ -194,6 +179,13 @@ export default function BatchFileUploader({
       }))
     );
 
+    // Simulation de progression upload
+    const uploadProgress = [75, 80, 85, 90, 95];
+    for (const progress of uploadProgress) {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      setFileProgresses((prev) => prev.map((fp) => ({ ...fp, progress })));
+    }
+
     const response = await fetch("/api/compress", {
       method: "POST",
       body: formData,
@@ -201,16 +193,14 @@ export default function BatchFileUploader({
     });
 
     const data = await response.json();
-
-    if (!response.ok) {
+    if (!response.ok)
       throw new Error(data.error || "Erreur de compression serveur");
-    }
 
     return data.files;
   };
 
   const validateFile = (file: File): string | null => {
-    const maxSize = 10 * 1024 * 1024; // 10MB
+    const maxSize = 10 * 1024 * 1024;
     const allowedTypes = [
       "application/pdf",
       "image/jpeg",
@@ -219,14 +209,8 @@ export default function BatchFileUploader({
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ];
 
-    if (file.size > maxSize) {
-      return "Le fichier dépasse 10MB";
-    }
-
-    if (!allowedTypes.includes(file.type)) {
-      return "Format non supporté";
-    }
-
+    if (file.size > maxSize) return "Le fichier dépasse 10MB";
+    if (!allowedTypes.includes(file.type)) return "Format non supporté";
     return null;
   };
 
@@ -234,7 +218,6 @@ export default function BatchFileUploader({
     async (files: File[]) => {
       if (isDisabled) return;
 
-      // Validation
       const validFiles: File[] = [];
       const errors: string[] = [];
 
@@ -250,10 +233,9 @@ export default function BatchFileUploader({
       if (errors.length > 0) {
         alert("Erreurs détectées:\n" + errors.join("\n"));
       }
-
       if (validFiles.length === 0) return;
 
-      // Initialiser les progrès
+      // Initialiser avec animation
       const newProgresses: FileProgress[] = validFiles.map((file, index) => ({
         id: `file-${index}`,
         file,
@@ -268,9 +250,9 @@ export default function BatchFileUploader({
       );
 
       try {
-        // Traitement par lots côté client
         const processedFiles: File[] = [];
 
+        // Traitement séquentiel avec animations
         for (let i = 0; i < validFiles.length; i++) {
           try {
             const processedFile = await processFile(validFiles[i], i);
@@ -297,14 +279,12 @@ export default function BatchFileUploader({
           }
         }
 
-        if (processedFiles.length === 0) {
+        if (processedFiles.length === 0)
           throw new Error("Aucun fichier n'a pu être traité");
-        }
 
-        // Upload vers serveur avec les tailles originales
         const serverResults = await uploadToServer(processedFiles, validFiles);
 
-        // Finaliser
+        // Animation finale avec délai
         setFileProgresses((prev) =>
           prev.map((fp) => ({
             ...fp,
@@ -327,10 +307,8 @@ export default function BatchFileUploader({
 
         onFilesCompressed(compressedFiles);
 
-        // Nettoyer après 3 secondes
-        setTimeout(() => {
-          setFileProgresses([]);
-        }, 3000);
+        // Cleanup après animation de succès
+        setTimeout(() => setFileProgresses([]), 4000);
       } catch (error) {
         console.error("Erreur globale:", error);
         setFileProgresses((prev) =>
@@ -352,23 +330,29 @@ export default function BatchFileUploader({
     [isDisabled, onCompressionStart, onCompressionEnd, onFilesCompressed]
   );
 
-  const handleDragOver = useCallback(
+  const handleDragEnter = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
-      if (!isDisabled) {
-        setIsDragOver(true);
-      }
+      dragCounterRef.current += 1;
+      if (!isDisabled) setIsDragOver(true);
     },
     [isDisabled]
   );
 
-  const handleDragLeave = useCallback(() => {
-    setIsDragOver(false);
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    dragCounterRef.current -= 1;
+    if (dragCounterRef.current === 0) setIsDragOver(false);
   }, []);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
+      dragCounterRef.current = 0;
       setIsDragOver(false);
       if (!isDisabled && e.dataTransfer.files.length > 0) {
         handleFiles(Array.from(e.dataTransfer.files));
@@ -377,14 +361,9 @@ export default function BatchFileUploader({
     [isDisabled, handleFiles]
   );
 
-  const handleFileSelect = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (e.target.files && e.target.files.length > 0) {
-        handleFiles(Array.from(e.target.files));
-      }
-    },
-    [handleFiles]
-  );
+  const removeFile = (fileId: string) => {
+    setFileProgresses((prev) => prev.filter((fp) => fp.id !== fileId));
+  };
 
   const formatFileSize = (bytes: number): string => {
     if (bytes === 0) return "0 B";
@@ -401,60 +380,55 @@ export default function BatchFileUploader({
   };
 
   const getStatusIcon = (status: FileProgress["status"]) => {
-    switch (status) {
-      case "pending":
-        return "⏳";
-      case "optimizing":
-        return "⚡";
-      case "uploading":
-        return "📤";
-      case "compressing":
-        return "🔄";
-      case "completed":
-        return "✅";
-      case "error":
-        return "❌";
-      default:
-        return "⏳";
-    }
+    const icons = {
+      pending: "⏳",
+      optimizing: "⚡",
+      uploading: "📤",
+      compressing: "🔄",
+      completed: "✅",
+      error: "❌",
+    };
+    return icons[status];
   };
 
   const getStatusText = (status: FileProgress["status"]) => {
-    switch (status) {
-      case "pending":
-        return "En attente";
-      case "optimizing":
-        return "Optimisation côté client";
-      case "uploading":
-        return "Upload vers serveur";
-      case "compressing":
-        return "Compression serveur";
-      case "completed":
-        return "Terminé";
-      case "error":
-        return "Erreur";
-      default:
-        return "En attente";
-    }
+    const texts = {
+      pending: "En attente",
+      optimizing: "Optimisation côté client",
+      uploading: "Upload vers serveur",
+      compressing: "Compression serveur",
+      completed: "Terminé",
+      error: "Erreur",
+    };
+    return texts[status];
   };
 
   return (
     <div className="space-y-6">
-      {/* Zone de drop */}
+      {/* Zone de drop améliorée */}
       <div
-        className={`relative border-3 border-dashed rounded-3xl transition-all duration-300 cursor-pointer ${
+        className={`relative border-3 border-dashed rounded-3xl transition-all duration-500 cursor-pointer overflow-hidden ${
           isDisabled
-            ? "border-gray-300 bg-gray-50 cursor-not-allowed p-8"
+            ? "border-gray-300 bg-gray-50 cursor-not-allowed"
             : isDragOver
-            ? "border-green-400 bg-green-50 scale-105 p-16"
-            : "border-gray-300 hover:border-sky-400 hover:bg-sky-50 p-12"
+            ? "border-green-400 bg-gradient-to-br from-green-50 to-blue-50 scale-[1.02] shadow-xl"
+            : "border-gray-300 hover:border-sky-400 hover:bg-gradient-to-br hover:from-sky-50 hover:to-indigo-50 hover:scale-[1.01] hover:shadow-lg"
         }`}
+        style={{ minHeight: isDragOver ? "200px" : "180px" }}
+        onDragEnter={handleDragEnter}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         onClick={() => !isDisabled && fileInputRef.current?.click()}
       >
-        <div className="text-center">
+        {/* Animation de background */}
+        <div
+          className={`absolute inset-0 bg-gradient-to-r from-blue-400 via-purple-500 to-green-400 opacity-0 transition-opacity duration-500 ${
+            isDragOver ? "opacity-10" : ""
+          }`}
+        />
+
+        <div className="relative z-10 text-center p-8">
           {isDisabled ? (
             <>
               <ExclamationTriangleIcon className="w-16 h-16 mx-auto mb-4 text-gray-400" />
@@ -467,22 +441,40 @@ export default function BatchFileUploader({
             </>
           ) : (
             <>
-              <div className="relative">
-                <CloudArrowUpIcon className="w-16 h-16 mx-auto mb-4 text-gray-400" />
+              <div
+                className={`relative transform transition-transform duration-300 ${
+                  isDragOver ? "scale-110" : ""
+                }`}
+              >
+                <CloudArrowUpIcon
+                  className={`w-16 h-16 mx-auto mb-4 transition-colors duration-300 ${
+                    isDragOver ? "text-green-500" : "text-gray-400"
+                  }`}
+                />
                 <SparklesIcon className="w-6 h-6 absolute -top-1 -right-1 text-yellow-500 animate-pulse" />
               </div>
-              <p className="text-xl font-semibold text-gray-700 mb-2">
-                Glissez vos fichiers ici
+
+              <p
+                className={`text-xl font-semibold mb-2 transition-colors duration-300 ${
+                  isDragOver ? "text-green-700" : "text-gray-700"
+                }`}
+              >
+                {isDragOver
+                  ? "Déposez vos fichiers ici !"
+                  : "Glissez vos fichiers ici"}
               </p>
+
               <p className="text-gray-500 mb-4">ou cliquez pour sélectionner</p>
-              <div className="bg-blue-50 rounded-2xl p-4 max-w-md mx-auto">
+
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl p-4 max-w-md mx-auto border border-blue-100">
                 <p className="text-sm text-blue-800 font-medium">
-                  ⚡ Traitement par lots
+                  ⚡ Traitement par lots intelligent
                 </p>
                 <p className="text-xs text-blue-600 mt-1">
                   Optimisation côté client + compression serveur
                 </p>
               </div>
+
               <p className="text-xs text-gray-400 mt-4">
                 PDF, JPG, PNG, DOCX • Max 10MB par fichier
               </p>
@@ -491,89 +483,172 @@ export default function BatchFileUploader({
         </div>
       </div>
 
-      {/* Progrès des fichiers */}
+      {/* Liste des fichiers avec previews */}
       {fileProgresses.length > 0 && (
         <div className="space-y-4">
-          <h3 className="font-semibold text-gray-900 flex items-center">
-            <SparklesIcon className="w-5 h-5 mr-2 text-blue-500" />
-            Traitement en cours (
-            {fileProgresses.filter((fp) => fp.status === "completed").length}/
-            {fileProgresses.length})
-          </h3>
-          {fileProgresses.map((fileProgress) => (
-            <div
-              key={fileProgress.id}
-              className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm"
-            >
-              <div className="flex items-center space-x-4">
-                <div className="text-2xl">{getFileIcon(fileProgress.file)}</div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">
-                    {fileProgress.file.name}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {formatFileSize(fileProgress.file.size)}
-                    {fileProgress.clientOptimization && (
-                      <span className="ml-2 text-green-600">
-                        →{" "}
-                        {formatFileSize(
-                          fileProgress.clientOptimization.optimizedSize
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-gray-900 flex items-center">
+              <SparklesIcon className="w-5 h-5 mr-2 text-blue-500" />
+              Traitement en cours (
+              {fileProgresses.filter((fp) => fp.status === "completed").length}/
+              {fileProgresses.length})
+            </h3>
+
+            {/* Progression globale */}
+            <div className="text-sm text-gray-500">
+              {Math.round(
+                fileProgresses.reduce((sum, fp) => sum + fp.progress, 0) /
+                  fileProgresses.length
+              )}
+              % complet
+            </div>
+          </div>
+
+          <div className="grid gap-4">
+            {fileProgresses.map((fileProgress) => (
+              <div
+                key={fileProgress.id}
+                className={`bg-white rounded-2xl border shadow-sm overflow-hidden transition-all duration-300 ${
+                  fileProgress.status === "completed"
+                    ? "border-green-200 bg-green-50"
+                    : fileProgress.status === "error"
+                    ? "border-red-200 bg-red-50"
+                    : "border-gray-200"
+                }`}
+              >
+                <div className="p-4">
+                  <div className="flex items-center space-x-4">
+                    <div className="relative flex-shrink-0">
+                      <div className="w-16 h-16 bg-gradient-to-br from-gray-100 to-gray-200 rounded-xl flex items-center justify-center border border-gray-200">
+                        <span className="text-2xl">
+                          {getFileIcon(fileProgress.file)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Informations du fichier */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-medium text-gray-900 truncate pr-4">
+                          {fileProgress.file.name}
+                        </p>
+                        {fileProgress.status === "pending" && (
+                          <button
+                            onClick={() => removeFile(fileProgress.id)}
+                            className="p-1 text-gray-400 hover:text-red-500 transition-colors"
+                          >
+                            <XMarkIcon className="w-4 h-4" />
+                          </button>
                         )}
-                        (-{fileProgress.clientOptimization.compressionRatio}%
-                        côté client)
-                      </span>
-                    )}
-                  </p>
-                </div>
-                <div className="flex-shrink-0 text-right">
-                  <div className="flex items-center space-x-2">
-                    <span className="text-lg">
-                      {getStatusIcon(fileProgress.status)}
-                    </span>
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">
-                        {fileProgress.progress}%
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {getStatusText(fileProgress.status)}
-                      </p>
+                      </div>
+
+                      <div className="flex items-center space-x-2 text-xs text-gray-500 mt-1">
+                        <span>{formatFileSize(fileProgress.file.size)}</span>
+                        {fileProgress.clientOptimization && (
+                          <>
+                            <span>→</span>
+                            <span className="text-green-600 font-medium">
+                              {formatFileSize(
+                                fileProgress.clientOptimization.optimizedSize
+                              )}
+                              <span className="ml-1">
+                                (-
+                                {
+                                  fileProgress.clientOptimization
+                                    .compressionRatio
+                                }
+                                %)
+                              </span>
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Status et progression */}
+                    <div className="flex-shrink-0 text-right">
+                      <div className="flex items-center space-x-2 mb-2">
+                        <span
+                          className={`text-lg ${
+                            fileProgress.status === "compressing"
+                              ? "animate-spin"
+                              : ""
+                          }`}
+                        >
+                          {getStatusIcon(fileProgress.status)}
+                        </span>
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">
+                            {fileProgress.progress}%
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {getStatusText(fileProgress.status)}
+                          </p>
+                        </div>
+                      </div>
                     </div>
                   </div>
+
+                  {/* Barre de progression animée */}
+                  <div className="mt-3">
+                    <div className="bg-gray-200 rounded-full h-2 overflow-hidden">
+                      <div
+                        className={`h-2 rounded-full transition-all duration-500 ease-out ${
+                          fileProgress.status === "error"
+                            ? "bg-red-500"
+                            : fileProgress.status === "completed"
+                            ? "bg-green-500"
+                            : "bg-gradient-to-r from-blue-500 via-purple-500 to-green-500"
+                        }`}
+                        style={{
+                          width: `${fileProgress.progress}%`,
+                          backgroundSize:
+                            fileProgress.status === "compressing"
+                              ? "200% 100%"
+                              : "100% 100%",
+                          animation:
+                            fileProgress.status === "compressing"
+                              ? "gradient-x 2s ease infinite"
+                              : "none",
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {fileProgress.error && (
+                    <div className="mt-3 text-xs text-red-600 bg-red-100 rounded-lg p-3 border border-red-200">
+                      <strong>Erreur:</strong> {fileProgress.error}
+                    </div>
+                  )}
                 </div>
               </div>
-
-              {/* Barre de progression */}
-              <div className="mt-3">
-                <div className="bg-gray-200 rounded-full h-2">
-                  <div
-                    className={`h-2 rounded-full transition-all duration-300 ${
-                      fileProgress.status === "error"
-                        ? "bg-red-500"
-                        : "bg-gradient-to-r from-blue-500 to-green-500"
-                    }`}
-                    style={{ width: `${fileProgress.progress}%` }}
-                  />
-                </div>
-              </div>
-
-              {fileProgress.error && (
-                <div className="mt-2 text-xs text-red-600 bg-red-50 rounded-lg p-2">
-                  {fileProgress.error}
-                </div>
-              )}
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
 
       <input
         type="file"
         ref={fileInputRef}
-        onChange={handleFileSelect}
+        onChange={(e) =>
+          e.target.files && handleFiles(Array.from(e.target.files))
+        }
         accept=".pdf,.jpg,.jpeg,.png,.docx"
         multiple
         className="hidden"
       />
+
+      <style jsx>{`
+        @keyframes gradient-x {
+          0%,
+          100% {
+            background-position: 0% 50%;
+          }
+          50% {
+            background-position: 100% 50%;
+          }
+        }
+      `}</style>
     </div>
   );
 }

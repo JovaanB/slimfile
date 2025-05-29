@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
 export async function GET() {
   try {
@@ -11,7 +11,6 @@ export async function GET() {
       });
     }
 
-    // Test de connexion PostgreSQL
     const { Pool } = require("pg");
     const pool = new Pool({
       connectionString: process.env.DATABASE_URL,
